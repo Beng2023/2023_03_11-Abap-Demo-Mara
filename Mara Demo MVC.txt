@@ -1,0 +1,248 @@
+*&---------------------------------------------------------------------*
+*& Report z_demo_mara
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT z_demo_mara.
+
+DATA Mara type mara.
+
+SELECT-OPTIONS matnr FOR mara-matnr default ''.
+
+START-OF-SELECTION.
+  DATA(app) = NEW z_cl_demo_mara_app(  ).
+
+  app->run( matnr[] ).
+  
+  
+  
+ CLASS z_cl_demo_mara_app DEFINITION
+  PUBLIC
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    METHODS:
+      run importing i_material_range type z_cl_demo_mara_dao=>material_range.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+     data: m_cont type ref to z_cl_demo_mara_cont,
+           m_view type ref to z_cl_demo_mara_view.
+ENDCLASS.
+
+CLASS z_cl_demo_mara_app IMPLEMENTATION.
+  METHOD run.
+    m_cont = new z_cl_demo_mara_cont(  ).
+    m_view = new z_cl_demo_mara_view(  ).
+
+    m_cont->set_m_view( m_view ).
+    m_view->set_m_cont( m_cont ).
+
+    m_cont->set_m_material_range( i_material_range ).
+
+    m_cont->run(  ).
+
+  ENDMETHOD.
+
+ENDCLASS. 
+
+
+
+CLASS z_cl_demo_mara_cont DEFINITION
+  PUBLIC
+  INHERITING FROM z_cl_demo_parent_runnable
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    METHODS: run REDEFINITION.
+    METHODS: set_m_material_range IMPORTING i_m_material_range TYPE z_cl_demo_mara_dao=>material_range,
+      set_m_view IMPORTING i_m_view TYPE REF TO z_cl_demo_mara_view.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+    METHODS: load_materials.
+    DATA: m_view           TYPE REF TO z_cl_demo_mara_view,
+          m_materials      TYPE z_cl_demo_mara_dao=>materials,
+          m_material_range TYPE z_cl_demo_mara_dao=>material_range.
+ENDCLASS.
+
+CLASS z_cl_demo_mara_cont IMPLEMENTATION.
+  METHOD run.
+    load_materials(  ).
+
+    m_view->set_m_materials( m_materials ).
+
+    m_view->run(  ).
+  ENDMETHOD.
+
+  METHOD load_materials.
+    DATA: mara_dao TYPE REF TO z_cl_demo_mara_dao,
+          ids      TYPE z_cl_demo_mara_dao=>material_ids,
+          id       LIKE LINE OF ids.
+
+    DATA(dao) = z_cl_demo_factory_dao=>create_dao( 'Z_CL_DEMO_MARA_DAO' ). "TODO substitute literal and maybe the general create method with a specific create method
+
+    TRY.
+        mara_dao ?= dao.
+      CATCH cx_root.
+    ENDTRY.
+
+    IF m_material_range IS NOT INITIAL.
+      m_materials = mara_dao->load_materials_by_range( m_material_range ).
+    ELSE.
+      MESSAGE 'Please provide search uptions for the material your are looking for.' TYPE 'S'(100).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD set_m_material_range.
+    me->m_material_range = i_m_material_range.
+  ENDMETHOD.
+
+  METHOD set_m_view.
+    me->m_view = i_m_view.
+  ENDMETHOD.
+
+ENDCLASS.
+
+
+
+CLASS z_cl_demo_mara_view DEFINITION
+  PUBLIC
+  INHERITING FROM z_cl_demo_parent_runnable
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    METHODS: run REDEFINITION.
+    METHODS: set_m_cont IMPORTING i_m_cont TYPE REF TO z_cl_demo_mara_cont,
+      set_m_materials IMPORTING i_m_materials TYPE z_cl_demo_mara_dao=>materials.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+    DATA: m_cont      TYPE REF TO z_cl_demo_mara_cont,
+          m_materials TYPE z_cl_demo_mara_dao=>materials.
+ENDCLASS.
+
+CLASS z_cl_demo_mara_view IMPLEMENTATION.
+  METHOD run.
+    DATA: salv TYPE REF TO cl_salv_table.
+
+    TRY.
+        cl_salv_table=>factory( IMPORTING r_salv_table = salv
+                                CHANGING t_table = m_materials ).
+      CATCH cx_salv_msg.
+    ENDTRY.
+
+    DATA(fieldcat) = cl_salv_controller_metadata=>get_lvc_fieldcatalog( r_columns      = salv->get_columns( )
+                                                                        r_aggregations = salv->get_aggregations( ) ).
+
+    DATA(layout) = VALUE lvc_s_layo( zebra      = abap_true
+                                      cwidth_opt = 'A'
+                                      grid_title = 'Selected Materials'(100) ).
+
+    salv->display( ).
+  ENDMETHOD.
+
+  METHOD set_m_cont.
+    me->m_cont = i_m_cont.
+  ENDMETHOD.
+
+  METHOD set_m_materials.
+    me->m_materials = i_m_materials.
+  ENDMETHOD.
+
+ENDCLASS.
+
+
+
+CLASS z_cl_demo_mara_dao DEFINITION
+  PUBLIC
+  INHERITING FROM z_cl_demo_parent_dao
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    TYPES: BEGIN OF type_material,
+             mara TYPE mara,
+           END OF type_material,
+
+           BEGIN OF type_material_id,
+             matnr TYPE matnr,
+           END OF type_material_id,
+
+           material_range TYPE RANGE OF mara-matnr,
+
+           materials      TYPE STANDARD TABLE OF type_material WITH DEFAULT KEY,
+           material_ids   TYPE STANDARD TABLE OF type_material_id WITH DEFAULT KEY.
+
+    METHODS: load_materials IMPORTING i_ids TYPE material_ids RETURNING VALUE(r_materials) TYPE materials,
+      load_materials_by_range IMPORTING i_material_range TYPE material_range RETURNING VALUE(r_materials) TYPE materials.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+
+CLASS z_cl_demo_parent_dao DEFINITION
+  PUBLIC
+  ABSTRACT
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+CLASS z_cl_demo_parent_dao IMPLEMENTATION.
+
+ENDCLASS.
+
+
+
+CLASS z_cl_demo_mara_dao IMPLEMENTATION.
+  METHOD load_materials.
+    SELECT * FROM mara FOR ALL ENTRIES IN @i_ids
+     WHERE matnr = @i_ids-matnr
+     INTO TABLE @r_materials.
+  ENDMETHOD.
+
+
+
+
+CLASS z_cl_demo_factory_dao DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    CLASS-METHODS: create_dao IMPORTING i_classname TYPE classname RETURNING VALUE(r_dao) TYPE REF TO z_cl_demo_parent_dao.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+CLASS z_cl_demo_factory_dao IMPLEMENTATION.
+  METHOD create_dao.
+    TRY.
+        CREATE OBJECT r_dao TYPE (i_classname).
+      CATCH cx_root.
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.
+
+
+
+CLASS z_cl_demo_parent_runnable DEFINITION
+  PUBLIC
+  CREATE PUBLIC ABSTRACT.
+
+  PUBLIC SECTION.
+    METHODS: run ABSTRACT.
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+   methods: report IMPORTING i_string type string.
+ENDCLASS.
+
+
+CLASS z_cl_demo_parent_runnable IMPLEMENTATION.
+  METHOD report.
+     "TODO report something. So that this parent abstract class makes sense. :)
+  ENDMETHOD.
+
+ENDCLASS.
+
